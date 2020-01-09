@@ -16,7 +16,7 @@ metadata:
         }
       ]
     capabilities: Basic Install
-    containerImage: quay.io/mavazque/reverse-words-operator:v0.1.0
+    containerImage: quay.io/QUAYUSER/reverse-words-operator:v0.1.0
     createdAt: "2020-01-30T00:00:00Z"
     repository: https://github.com/emergingtechvalencia/reversewords-operator
     certified: "false"
@@ -67,7 +67,7 @@ spec:
                       fieldPath: metadata.name
                 - name: OPERATOR_NAME
                   value: reverse-words-operator
-                image: quay.io/mavazque/reverse-words-operator:v0.1.0
+                image: quay.io/QUAYUSER/reverse-words-operator:v0.1.0
                 imagePullPolicy: Always
                 name: reverse-words-operator
                 resources: {}

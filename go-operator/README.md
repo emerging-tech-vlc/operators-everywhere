@@ -19,7 +19,8 @@ sudo chmod +x /usr/local/bin/operator-sdk
 ~~~sh
 mkdir -p ~/operators-projects/ && cd $_
 export GO111MODULE=on
-operator-sdk new reverse-words-operator --repo github.com/<github_user>/reverse-words-operator
+export GH_USER=<your_github_user>
+operator-sdk new reverse-words-operator --repo github.com/${GH_USER}/reverse-words-operator
 cd reverse-words-operator
 ~~~
 
@@ -42,13 +43,15 @@ operator-sdk generate crds
 ~~~sh
 operator-sdk add controller --api-version=emergingtech.vlc/v1alpha1 --kind=ReverseWordsApp
 curl -Ls https://raw.githubusercontent.com/emerging-tech-vlc/operators-everywhere/master/go-operator/files/reversewordsapp_controller.go -o pkg/controller/reversewordsapp/reversewordsapp_controller.go
+sed -i "s/GHUSER/${GH_USER}/" pkg/controller/reversewordsapp/reversewordsapp_controller.go
 ~~~
 
 ## Build the Operator
 
 ~~~sh
-operator-sdk build quay.io/<your_user>/reverse-words-operator:v0.1.0 --image-builder podman
-podman push quay.io/<your_user>/reverse-words-operator:v0.1.0
+export QUAY_USER=<your_quay_user>
+operator-sdk build quay.io/${QUAY_USER}/reverse-words-operator:v0.1.0 --image-builder podman
+podman push quay.io/${QUAY_USER}/reverse-words-operator:v0.1.0
 ~~~
 
 ## Generate the Cluster Service Version 
@@ -56,6 +59,7 @@ podman push quay.io/<your_user>/reverse-words-operator:v0.1.0
 ~~~sh
 operator-sdk olm-catalog gen-csv --csv-version 0.1.0 --update-crds
 curl -Ls https://raw.githubusercontent.com/emerging-tech-vlc/operators-everywhere/master/go-operator/files/reverse-words-operator.v0.1.0.clusterserviceversion.yaml -o deploy/olm-catalog/reverse-words-operator/0.1.0/reverse-words-operator.v0.1.0.clusterserviceversion.yaml
+sed -i "s/QUAYUSER/${QUAY_USER}/" deploy/olm-catalog/reverse-words-operator/0.1.0/reverse-words-operator.v0.1.0.clusterserviceversion.yaml
 ~~~
 
 ## Review the CSV
@@ -83,9 +87,9 @@ rm -rf manifests/*
 # Copy the operator bundle
 cp -r ~/operators-projects/reverse-words-operator/deploy/olm-catalog/reverse-words-operator manifests/
 # Build the Registry
-podman build -f upstream-example.Dockerfile -t quay.io/<your_user>/emergingtech-catalog:v1
+podman build -f upstream-example.Dockerfile -t quay.io/${QUAY_USER}/emergingtech-catalog:v1
 # Push the registry
-podman push quay.io/<your_user>/emergingtech-catalog:v1
+podman push quay.io/${QUAY_USER}/emergingtech-catalog:v1
 ~~~
 
 ### Load the CatalogSource onto the cluster
@@ -100,7 +104,7 @@ spec:
   sourceType: grpc
   displayName: Emerging Tech Operators
   publisher: Emerging Tech Valencia
-  image: quay.io/<your_user>/emergingtech-catalog:v1
+  image: quay.io/${QUAY_USER}/emergingtech-catalog:v1
 EOF
 ~~~
 
@@ -180,13 +184,14 @@ Go to the OperatorHub catalog and search the operator within the WebUI.
 
    ~~~sh
    # Build the Registry
-   podman build -f upstream-example.Dockerfile -t quay.io/<your_user>/emergingtech-catalog:v2
+   podman build -f upstream-example.Dockerfile -t quay.io/${QUAY_USER}/emergingtech-catalog:v2
    # Push the registry
-   podman push quay.io/<your_user>/emergingtech-catalog:v2
+   podman push quay.io/${QUAY_USER}/emergingtech-catalog:v2
    ~~~
 5. Update the CatalogSource
 
    ~~~sh
-   oc -n openshift-marketplace patch catalogsource emergingtech-catalog -p '{"spec":{"image":"quay.io/mavazque/emergingtech-catalog:v2"}}' --type merge
+   PATCH={"spec":{"image":"quay.io/${QUAY_USER}/emergingtech-catalog:v2"}}
+   oc -n openshift-marketplace patch catalogsource emergingtech-catalog -p '$PATCH' --type merge
    ~~~
 6. Now you can update your operators modifying the subscription
