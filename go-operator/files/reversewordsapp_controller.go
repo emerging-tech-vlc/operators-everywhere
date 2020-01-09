@@ -3,7 +3,7 @@ package reversewordsapp
 import (
     "context"
     "reflect"
-    emergingtechv1alpha1 "github.com/mvazquezc/reverse-words-operator/pkg/apis/emergingtech/v1alpha1"
+    emergingtechv1alpha1 "github.com/GHUSER/reverse-words-operator/pkg/apis/emergingtech/v1alpha1"
 
     corev1 "k8s.io/api/core/v1"
     "k8s.io/apimachinery/pkg/api/errors"
