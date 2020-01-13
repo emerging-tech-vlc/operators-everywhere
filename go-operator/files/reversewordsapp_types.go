@@ -8,6 +8,7 @@ import (
 // +k8s:openapi-gen=true
 type ReverseWordsAppSpec struct {
      Replicas int32  `json:"replicas"`
+     AppVersion string `json:"appVersion"`
 }
 
 // ReverseWordsAppStatus defines the observed state of ReverseWordsApp

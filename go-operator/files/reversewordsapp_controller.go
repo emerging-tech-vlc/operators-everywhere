@@ -4,12 +4,13 @@ import (
     "context"
     "reflect"
     emergingtechv1alpha1 "github.com/GHUSER/reverse-words-operator/pkg/apis/emergingtech/v1alpha1"
-
+    "github.com/go-logr/logr"
     corev1 "k8s.io/api/core/v1"
     "k8s.io/apimachinery/pkg/api/errors"
     metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
     "k8s.io/apimachinery/pkg/runtime"
     "k8s.io/apimachinery/pkg/types"
+    "k8s.io/apimachinery/pkg/util/intstr"
     "sigs.k8s.io/controller-runtime/pkg/client"
     "sigs.k8s.io/controller-runtime/pkg/controller"
     "sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
@@ -48,27 +49,25 @@ func add(mgr manager.Manager, r reconcile.Reconciler) error {
         return err
     }
 
-    // Watch for changes to secondary resource Deployments and requeue the owner ReverseWordsApp
-    err = c.Watch(&source.Kind{Type: &appsv1.Deployment{}}, &handler.EnqueueRequestForOwner{
-        IsController: true,
-        OwnerType:    &emergingtechv1alpha1.ReverseWordsApp{},
-    })
-    if err != nil {
-        return err
+    // Watch for changes to secondary resources Deployments and Services and requeue the owner ReverseWordsApp
+    ownedObjects := []runtime.Object{
+        &appsv1.Deployment{},
+        &corev1.Service{},
     }
 
-    // Watch for changes to secondary resource Services and requeue the owner ReverseWordsApp
-    err = c.Watch(&source.Kind{Type: &corev1.Service{}}, &handler.EnqueueRequestForOwner{
-        IsController: true,
-        OwnerType:    &emergingtechv1alpha1.ReverseWordsApp{},
-    })
-    if err != nil {
-        return err
+    for _, ownedObject := range ownedObjects {
+        err = c.Watch(&source.Kind{Type: ownedObject}, &handler.EnqueueRequestForOwner{
+            IsController: true,
+            OwnerType:    &emergingtechv1alpha1.ReverseWordsApp{},
+        })
+        if err != nil {
+            return err
+        }
     }
 
     return nil
 }
-
+// blank assignment to ensure that ReconcileReverseWordsApp implements reconcile.Reconciler
 var _ reconcile.Reconciler = &ReconcileReverseWordsApp{}
 
 // ReconcileReverseWordsApp reconciles a ReverseWordsApp object
@@ -102,29 +101,32 @@ func (r *ReconcileReverseWordsApp) Reconcile(request reconcile.Request) (reconci
         return reconcile.Result{}, err
     }
 
-    // Get a deployment for our application
-    // Define a new Deployment object
-    deployment := newDeploymentForCR(instance)
+    // Reconcile Deployment object
+    result, err := r.reconcileDeployment(instance, reqLogger)
+    if err != nil {
+        return result, err
+    }
+    // Reconcile Service object
+    result, err = r.reconcileService(instance, reqLogger)
+    if err != nil {
+        return result, err
+    }
 
-    // Get a service for our application
-    // Define a new Service object
-    service := newServiceForCR(instance)
+    return reconcile.Result{}, err
+}
+
+func (r *ReconcileReverseWordsApp) reconcileDeployment(cr *emergingtechv1alpha1.ReverseWordsApp, reqLogger logr.Logger) (reconcile.Result, error) {
+    // Define a new Deployment object
+    deployment := newDeploymentForCR(cr)
 
     // Set ReverseWordsApp instance as the owner and controller of the Deployment
-    if err := controllerutil.SetControllerReference(instance, deployment, r.scheme); err != nil {
+    if err := controllerutil.SetControllerReference(cr, deployment, r.scheme); err != nil {
         return reconcile.Result{}, err
     }
-    // Set ReverseWordsApp instance as the owner and controller of the Service
-    if err := controllerutil.SetControllerReference(instance, service, r.scheme); err != nil {
-        return reconcile.Result{}, err
-    }
-
-    // Get configured replicas and release from the Spec
-    specReplicas := instance.Spec.Replicas
 
     // Check if this Deployment already exists
     deploymentFound := &appsv1.Deployment{}
-    err = r.client.Get(context.TODO(), types.NamespacedName{Name: deployment.Name, Namespace: deployment.Namespace}, deploymentFound)
+    err := r.client.Get(context.TODO(), types.NamespacedName{Name: deployment.Name, Namespace: deployment.Namespace}, deploymentFound)
     if err != nil && errors.IsNotFound(err) {
         reqLogger.Info("Creating a new Deployment", "Deployment.Namespace", deployment.Namespace, "Deployment.Name", deployment.Name)
         err = r.client.Create(context.TODO(), deployment)
@@ -140,38 +142,27 @@ func (r *ReconcileReverseWordsApp) Reconcile(request reconcile.Request) (reconci
         reqLogger.Info("Deployment already exists", "Deployment.Namespace", deploymentFound.Namespace, "Deployment.Name", deploymentFound.Name)
     }
 
-    // Check if this Service already exists
-    serviceFound := &corev1.Service{}
-    err = r.client.Get(context.TODO(), types.NamespacedName{Name: service.Name, Namespace: service.Namespace}, serviceFound)
-    if err != nil && errors.IsNotFound(err) {
-        reqLogger.Info("Creating a new Service", "Service.Namespace", service.Namespace, "Service.Name", service.Name)
-        err = r.client.Create(context.TODO(), service)
-        if err != nil {
-            return reconcile.Result{}, err
-        }
-        // Service created successfully - don't requeue
-        return reconcile.Result{}, nil
-    } else if err != nil {
-        return reconcile.Result{}, err
-    } else {
-        // Service already exists
-        reqLogger.Info("Service already exists", "Service.Namespace", serviceFound.Namespace, "Service.Name", serviceFound.Name)
-    }
-
     // Ensure deployment replicas match the desired state
-    if *deploymentFound.Spec.Replicas != specReplicas {
-        log.Info("Current deployment replicas do not match ReverseWordsApp configured Replicas")
-        deploymentFound.Spec.Replicas = &specReplicas
+    if !reflect.DeepEqual(deploymentFound.Spec.Replicas, deployment.Spec.Replicas) {
+        reqLogger.Info("Current deployment replicas do not match ReverseWordsApp configured Replicas")
         // Update the replicas
-        err = r.client.Update(context.TODO(), deploymentFound)
+        err = r.client.Update(context.TODO(), deployment)
         if err != nil {
             reqLogger.Error(err, "Failed to update Deployment.", "Deployment.Namespace", deploymentFound.Namespace, "Deployment.Name", deploymentFound.Name)
             return reconcile.Result{}, err
         }
-        // Spec updated - return and requeue (so we can update status)
-        return reconcile.Result{Requeue: true}, nil
     }
-
+    // Ensure deployment container image match the desired state, returns true if deployment needs to be updated
+    if checkDeploymentImage(deploymentFound, deployment) {
+        reqLogger.Info("Current deployment image version do not match ReverseWordsApp configured version")
+        // Update the image
+        err = r.client.Update(context.TODO(), deployment)
+        if err != nil {
+            reqLogger.Error(err, "Failed to update Deployment.", "Deployment.Namespace", deploymentFound.Namespace, "Deployment.Name", deploymentFound.Name)
+            return reconcile.Result{}, err
+        }
+    }
+    
     // Update the ReverseWordsApp status with the pod names
     // List the pods for this ReverseWordsApp deployment
     podList := &corev1.PodList{}
@@ -187,26 +178,80 @@ func (r *ReconcileReverseWordsApp) Reconcile(request reconcile.Request) (reconci
     podNames := getRunningPodNames(podList.Items)
 
     // Update the appPods if needed
-    if !reflect.DeepEqual(podNames, instance.Status.AppPods) {
-        instance.Status.AppPods = podNames
-        err := r.client.Status().Update(context.TODO(), instance)
+    if !reflect.DeepEqual(podNames, cr.Status.AppPods) {
+        cr.Status.AppPods = podNames
+        err := r.client.Status().Update(context.TODO(), cr)
         if err != nil {
             reqLogger.Error(err, "Failed to update ReverseWordsApp status.")
             return reconcile.Result{}, err
         }
-        log.Info("Status updated")
+        reqLogger.Info("Status updated")
     } else {
-        log.Info("Status has not changed")
+        reqLogger.Info("Status has not changed")
     }
 
+    // Deployment reconcile finished
     return reconcile.Result{}, nil
 }
+
+func (r *ReconcileReverseWordsApp) reconcileService(cr *emergingtechv1alpha1.ReverseWordsApp, reqLogger logr.Logger) (reconcile.Result, error) {
+    // Define a new Service object
+    service := newServiceForCR(cr)
+
+    // Set ReverseWordsApp instance as the owner and controller of the Service
+    if err := controllerutil.SetControllerReference(cr, service, r.scheme); err != nil {
+        return reconcile.Result{}, err
+    }
+
+    // Check if this Service already exists
+    serviceFound := &corev1.Service{}
+    err := r.client.Get(context.TODO(), types.NamespacedName{Name: service.Name, Namespace: service.Namespace}, serviceFound)
+    if err != nil && errors.IsNotFound(err) {
+        reqLogger.Info("Creating a new Service", "Service.Namespace", service.Namespace, "Service.Name", service.Name)
+        err = r.client.Create(context.TODO(), service)
+        if err != nil {
+            return reconcile.Result{}, err
+        }
+        // Service created successfully - don't requeue
+        return reconcile.Result{}, nil
+    } else if err != nil {
+        return reconcile.Result{}, err
+    } else {
+        // Service already exists
+        reqLogger.Info("Service already exists", "Service.Namespace", serviceFound.Namespace, "Service.Name", serviceFound.Name)
+    }
+    // Service reconcile finished
+    return reconcile.Result{}, nil
+}
+
 
 // Returns a new deployment without replicas configured
 // replicas will be configured in the sync loop
 func newDeploymentForCR(cr *emergingtechv1alpha1.ReverseWordsApp) *appsv1.Deployment {
     labels := map[string]string{
         "app": cr.Name,
+    }
+    replicas := cr.Spec.Replicas
+    // Minimum replicas will be 1
+    if replicas == 0 {
+        replicas = 1
+    }
+    appVersion := "latest"
+    if cr.Spec.AppVersion != "" {
+        appVersion = cr.Spec.AppVersion
+    }
+    // TODO:Check if application version exists
+    containerImage := "quay.io/mavazque/reversewords:" + appVersion
+    probe := &corev1.Probe{
+        Handler: corev1.Handler{
+            HTTPGet: &corev1.HTTPGetAction{
+                Path: "/health",
+                Port: intstr.FromInt(8080),
+            },
+        },
+        InitialDelaySeconds: 5,
+        TimeoutSeconds: 2,
+        PeriodSeconds: 15,
     }
     return &appsv1.Deployment{
         TypeMeta: metav1.TypeMeta{
@@ -219,6 +264,7 @@ func newDeploymentForCR(cr *emergingtechv1alpha1.ReverseWordsApp) *appsv1.Deploy
             Labels:    labels,
         },
         Spec: appsv1.DeploymentSpec{
+            Replicas: &replicas,
             Selector: &metav1.LabelSelector{
                 MatchLabels: labels,
             },
@@ -227,14 +273,20 @@ func newDeploymentForCR(cr *emergingtechv1alpha1.ReverseWordsApp) *appsv1.Deploy
                     Labels: labels,
                 },
                 Spec: corev1.PodSpec{
-                    Containers: []corev1.Container{{
-                        Image: "quay.io/mavazque/reversewords:latest",
-                        Name:  "reversewords",
-                        Ports: []corev1.ContainerPort{{
-                            ContainerPort: 8080,
-                            Name: "reversewords",
-                        }},
-                    }},
+                    Containers: []corev1.Container{
+                        {
+                            Image: containerImage,
+                            Name:  "reversewords",
+                            Ports: []corev1.ContainerPort{
+                                {
+                                    ContainerPort: 8080,
+                                    Name: "reversewords",
+                                },
+                            },
+                            LivenessProbe: probe,
+                            ReadinessProbe: probe,
+                        },
+                    },
                 },
             },
         },
@@ -281,4 +333,19 @@ func getRunningPodNames(pods []corev1.Pod) []string {
         }
     }
     return podNames
+}
+
+// checkDeploymentImage returns wether the deployment image is different or not
+func checkDeploymentImage(current *appsv1.Deployment, desired *appsv1.Deployment) bool {
+    for _, curr := range current.Spec.Template.Spec.Containers {
+        for _, des := range desired.Spec.Template.Spec.Containers {
+            // Only compare the images of containers with the same name
+            if curr.Name == des.Name {
+                if curr.Image != des.Image {
+                    return true
+                }
+            }
+        }
+    }
+    return false
 }
