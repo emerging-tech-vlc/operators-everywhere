@@ -12,6 +12,7 @@ metadata:
           },
           "spec": {
             "replicas": 3
+            "appVersion": "latest"
           }
         }
       ]
