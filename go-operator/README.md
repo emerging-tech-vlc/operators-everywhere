@@ -1,7 +1,5 @@
 # Creating your very first Go Operator using the Operator Framework SDK
 
-
-
 ## Installing the Operator SDK
 
 ~~~sh
