@@ -23,13 +23,13 @@ cd reverse-words-operator
 ## Add the default properties
 
 ~~~sh
-curl -Ls https://raw.githubusercontent.com/emerging-tech-vlc/operators-everywhere/master/ansible-operator/files/vars_main.yml -o roles/reversewordsapp/defaults/main.yml
+curl -Ls https://raw.githubusercontent.com/emerging-tech-vlc/operators-everywhere/master/ansible-operator/files/vars_main.yaml -o roles/reversewordsapp/defaults/main.yml
 ~~~
 
 ## Add the controller logic
 
 ~~~sh
-curl -Ls https://raw.githubusercontent.com/emerging-tech-vlc/operators-everywhere/master/ansible-operator/files/controller_main.yml -o roles/reversewordsapp/tasks/main.yml
+curl -Ls https://raw.githubusercontent.com/emerging-tech-vlc/operators-everywhere/master/ansible-operator/files/controller_main.yaml -o roles/reversewordsapp/tasks/main.yml
 ~~~
 
 ## Build the Operator
