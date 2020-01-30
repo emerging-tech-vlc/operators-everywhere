@@ -1,0 +1,4 @@
+---
+# defaults file for reversewordsapp
+replicas: 1
+app_version: latest
