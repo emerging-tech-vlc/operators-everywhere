@@ -78,6 +78,9 @@ type ReconcileReverseWordsApp struct {
     scheme *runtime.Scheme
 }
 
+// Finalizer for our objects
+const reverseWordsAppFinalizer = "finalizer.reversewordsapp.emergingtech.vlc"
+
 // Reconcile reads that state of the cluster for a ReverseWordsApp object and makes changes based on the state read
 // and what is in the ReverseWordsApp.Spec
 // Note:
@@ -101,6 +104,37 @@ func (r *ReconcileReverseWordsApp) Reconcile(request reconcile.Request) (reconci
         return reconcile.Result{}, err
     }
 
+    // Check if the CR is marked to be deleted
+    isInstanceMarkedToBeDeleted := instance.GetDeletionTimestamp() != nil
+    if isInstanceMarkedToBeDeleted {
+        reqLogger.Info("Instance marked for deletion, running finalizers")
+        if contains(instance.GetFinalizers(), reverseWordsAppFinalizer) {
+            // Run the finalizer logic
+            err := r.finalizeReverseWordsApp(reqLogger, instance)
+            if err != nil {
+                // Don't remove the finalizer if we failed to finalize the object
+                return reconcile.Result{}, err
+            }
+            reqLogger.Info("Instance finalizers completed")
+            // Remove finalizer once the finalizer logic has run
+            controllerutil.RemoveFinalizer(instance, reverseWordsAppFinalizer)
+            err = r.client.Update(context.TODO(), instance)
+            if err != nil {
+                // If the object update fails, requeue
+				return reconcile.Result{}, err
+            }
+        }
+        reqLogger.Info("Instance can be deleted now")
+        return reconcile.Result{}, nil
+    }
+
+    // Add Finalizers to the CR
+    if !contains(instance.GetFinalizers(), reverseWordsAppFinalizer) {
+        if err := r.addFinalizer(reqLogger, instance); err != nil {
+            return reconcile.Result{}, err
+		}
+    }
+
     // Reconcile Deployment object
     result, err := r.reconcileDeployment(instance, reqLogger)
     if err != nil {
@@ -111,6 +145,8 @@ func (r *ReconcileReverseWordsApp) Reconcile(request reconcile.Request) (reconci
     if err != nil {
         return result, err
     }
+
+    // The CR status is updated in the Deployment reconcile method
 
     return reconcile.Result{}, err
 }
@@ -133,8 +169,11 @@ func (r *ReconcileReverseWordsApp) reconcileDeployment(cr *emergingtechv1alpha1.
         if err != nil {
             return reconcile.Result{}, err
         }
-        // Deployment created successfully - don't requeue
-        return reconcile.Result{}, nil
+        // Get existing deployment again
+        //deploymentFound = &appsv1.Deployment{}
+        //err = r.client.Get(context.TODO(), types.NamespacedName{Name: deployment.Name, Namespace: deployment.Namespace}, deploymentFound)
+        // Requeue the object to update its status
+        return reconcile.Result{Requeue: true}, nil
     } else if err != nil {
         return reconcile.Result{}, err
     } else {
@@ -162,36 +201,93 @@ func (r *ReconcileReverseWordsApp) reconcileDeployment(cr *emergingtechv1alpha1.
             return reconcile.Result{}, err
         }
     }
-    
-    // Update the ReverseWordsApp status with the pod names
-    // List the pods for this ReverseWordsApp deployment
-    podList := &corev1.PodList{}
-    listOpts := []client.ListOption{
-        client.InNamespace(deploymentFound.Namespace),
-        client.MatchingLabels(deploymentFound.Labels),
-    }
-    err = r.client.List(context.TODO(), podList, listOpts...)
-    if err != nil {
-        reqLogger.Error(err, "Failed to list Pods.", "Deployment.Namespace", deploymentFound.Namespace, "Deployment.Name", deploymentFound.Name)
-        return reconcile.Result{}, err
-    }
-    podNames := getRunningPodNames(podList.Items)
 
-    // Update the appPods if needed
-    if !reflect.DeepEqual(podNames, cr.Status.AppPods) {
-        cr.Status.AppPods = podNames
-        err := r.client.Status().Update(context.TODO(), cr)
+    // Check if the deployment is ready
+
+    deploymentReady := isDeploymentReady(deploymentFound) 
+    
+    if deploymentReady {
+        // List the pods for this ReverseWordsApp deployment
+        podList := &corev1.PodList{}
+        listOpts := []client.ListOption{
+            client.InNamespace(deploymentFound.Namespace),
+            client.MatchingLabels(deploymentFound.Labels),
+        }
+        err = r.client.List(context.TODO(), podList, listOpts...)
         if err != nil {
-            reqLogger.Error(err, "Failed to update ReverseWordsApp status.")
+            reqLogger.Error(err, "Failed to list Pods.", "Deployment.Namespace", deploymentFound.Namespace, "Deployment.Name", deploymentFound.Name)
             return reconcile.Result{}, err
         }
-        reqLogger.Info("Status updated")
+
+        podNames := getRunningPodNames(podList.Items)
+        // Update the status
+        cr.Status.AppPods = podNames
+        cr.SetCondition(emergingtechv1alpha1.ConditionTypeReverseWordsDeploymentNotReady, false)    
+        cr.SetCondition(emergingtechv1alpha1.ConditionTypeReady, true)
     } else {
-        reqLogger.Info("Status has not changed")
+        cr.SetCondition(emergingtechv1alpha1.ConditionTypeReverseWordsDeploymentNotReady, true)    
+        cr.SetCondition(emergingtechv1alpha1.ConditionTypeReady, false)
+    }
+
+    // Reconcile the new status for the instance
+    cr, err = r.updateReverseWordsAppStatus(cr, reqLogger)
+    if err != nil {
+        reqLogger.Error(err, "Failed to update ReverseWordsApp Status.")
+		return reconcile.Result{}, err
     }
 
     // Deployment reconcile finished
     return reconcile.Result{}, nil
+}
+
+// updateReverseWordsAppStatus updates the Status of a given CR
+func (r *ReconcileReverseWordsApp) updateReverseWordsAppStatus(cr *emergingtechv1alpha1.ReverseWordsApp, reqLogger logr.Logger) (*emergingtechv1alpha1.ReverseWordsApp, error) {
+    reverseWordsApp := &emergingtechv1alpha1.ReverseWordsApp{}
+    err := r.client.Get(context.TODO(), types.NamespacedName{Name: cr.Name, Namespace: cr.Namespace}, reverseWordsApp)
+    if err != nil {
+		return reverseWordsApp, err
+    }
+
+    if !reflect.DeepEqual(cr.Status, reverseWordsApp.Status) {
+        reqLogger.Info("Updating ReverseWordsApp Status.")
+        // We need to update the status      
+        err = r.client.Status().Update(context.TODO(), cr)
+        if err != nil {
+			return cr, err
+        }
+        updatedReverseWordsApp := &emergingtechv1alpha1.ReverseWordsApp{}
+        err = r.client.Get(context.TODO(), types.NamespacedName{Name: cr.Name, Namespace: cr.Namespace}, updatedReverseWordsApp)
+        if err != nil {
+			return cr, err
+        }
+        cr = updatedReverseWordsApp.DeepCopy()
+    }
+    return cr, nil
+
+}
+
+// addFinalizer adds a given finalizer to a given CR
+func (r *ReconcileReverseWordsApp) addFinalizer(reqLogger logr.Logger, cr *emergingtechv1alpha1.ReverseWordsApp) error {
+	reqLogger.Info("Adding Finalizer for the ReverseWordsApp")
+	controllerutil.AddFinalizer(cr, reverseWordsAppFinalizer)
+
+	// Update CR
+	err := r.client.Update(context.TODO(), cr)
+	if err != nil {
+		reqLogger.Error(err, "Failed to update ReverseWordsApp with finalizer")
+		return err
+	}
+	return nil
+}
+
+// finalizeReverseWordsApp runs required tasks before deleting the objects owned by the CR
+func (r *ReconcileReverseWordsApp) finalizeReverseWordsApp(reqLogger logr.Logger, cr *emergingtechv1alpha1.ReverseWordsApp) error {
+	// TODO(user): Add the cleanup steps that the operator
+	// needs to do before the CR can be deleted. Examples
+	// of finalizers include performing backups and deleting
+	// resources that are not owned by this CR, like a PVC.
+	reqLogger.Info("Successfully finalized ReverseWordsApp")
+	return nil
 }
 
 func (r *ReconcileReverseWordsApp) reconcileService(cr *emergingtechv1alpha1.ReverseWordsApp, reqLogger logr.Logger) (reconcile.Result, error) {
@@ -321,9 +417,22 @@ func newServiceForCR(cr *emergingtechv1alpha1.ReverseWordsApp) *corev1.Service {
     }
 }
 
+// isDeploymentReady returns a true bool if the deployment has all its pods ready
+func isDeploymentReady(deployment *appsv1.Deployment) bool {
+    configuredReplicas := deployment.Status.Replicas
+    readyReplicas := deployment.Status.ReadyReplicas
+    deploymentReady := false
+    if configuredReplicas == readyReplicas {
+        deploymentReady = true
+    }
+    return deploymentReady
+}
+
+
 // getRunningPodNames returns the pod names for the pods running in the array of pods passed in
 func getRunningPodNames(pods []corev1.Pod) []string {
-    var podNames []string
+    // Create an empty []string, so if no podNames are returned, instead of nil we get an empty slice
+    var podNames []string = make([]string, 0)
     for _, pod := range pods {
         if pod.GetObjectMeta().GetDeletionTimestamp() != nil {
             continue
@@ -348,4 +457,14 @@ func checkDeploymentImage(current *appsv1.Deployment, desired *appsv1.Deployment
         }
     }
     return false
+}
+
+// contains returns true if a string is found on a slice
+func contains(list []string, s string) bool {
+	for _, v := range list {
+		if v == s {
+			return true
+		}
+	}
+	return false
 }

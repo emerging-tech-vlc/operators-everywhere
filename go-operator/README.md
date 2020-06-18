@@ -3,7 +3,7 @@
 ## Installing the Operator SDK
 
 ~~~sh
-RELEASE_VERSION=v0.14.0
+RELEASE_VERSION=v0.18.1
 # Linux
 sudo curl -L https://github.com/operator-framework/operator-sdk/releases/download/${RELEASE_VERSION}/operator-sdk-${RELEASE_VERSION}-x86_64-linux-gnu -o /usr/local/bin/operator-sdk
 # macOS
@@ -17,6 +17,7 @@ sudo chmod +x /usr/local/bin/operator-sdk
 ~~~sh
 mkdir -p ~/operators-projects/ && cd $_
 export GO111MODULE=on
+export GOPROXY=https://proxy.golang.org
 export GH_USER=<your_github_user>
 operator-sdk new reverse-words-operator --repo github.com/${GH_USER}/reverse-words-operator
 cd reverse-words-operator
