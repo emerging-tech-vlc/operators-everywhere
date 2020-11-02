@@ -1,49 +1,62 @@
+/*
+
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
+
 package v1alpha1
 
 import (
-    metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-    corev1 "k8s.io/api/core/v1"
-    "github.com/operator-framework/operator-sdk/pkg/status"
+	"github.com/operator-framework/operator-lib/status"
+	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
 // ReverseWordsAppSpec defines the desired state of ReverseWordsApp
-// +k8s:openapi-gen=true
 type ReverseWordsAppSpec struct {
-     Replicas int32  `json:"replicas"`
-     AppVersion string `json:"appVersion,omitempty"`
+	Replicas   int32  `json:"replicas"`
+	AppVersion string `json:"appVersion,omitempty"`
 }
 
 // ReverseWordsAppStatus defines the observed state of ReverseWordsApp
-// +k8s:openapi-gen=true
 type ReverseWordsAppStatus struct {
-    AppPods []string `json:"appPods"`
-    Conditions status.Conditions `json:"conditions"`
+	AppPods    []string          `json:"appPods"`
+	Conditions status.Conditions `json:"conditions"`
 }
 
-// +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
+// +kubebuilder:object:root=true
+// +kubebuilder:subresource:status
 
 // ReverseWordsApp is the Schema for the reversewordsapps API
-// +k8s:openapi-gen=true
-// +kubebuilder:subresource:status
 type ReverseWordsApp struct {
-    metav1.TypeMeta   `json:",inline"`
-    metav1.ObjectMeta `json:"metadata,omitempty"`
+	metav1.TypeMeta   `json:",inline"`
+	metav1.ObjectMeta `json:"metadata,omitempty"`
 
-    Spec   ReverseWordsAppSpec   `json:"spec,omitempty"`
-    Status ReverseWordsAppStatus `json:"status,omitempty"`
+	Spec   ReverseWordsAppSpec   `json:"spec,omitempty"`
+	Status ReverseWordsAppStatus `json:"status,omitempty"`
 }
 
-// +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
+// +kubebuilder:object:root=true
 
 // ReverseWordsAppList contains a list of ReverseWordsApp
 type ReverseWordsAppList struct {
-    metav1.TypeMeta `json:",inline"`
-    metav1.ListMeta `json:"metadata,omitempty"`
-    Items           []ReverseWordsApp `json:"items"`
+	metav1.TypeMeta `json:",inline"`
+	metav1.ListMeta `json:"metadata,omitempty"`
+	Items           []ReverseWordsApp `json:"items"`
 }
 
 func init() {
-    SchemeBuilder.Register(&ReverseWordsApp{}, &ReverseWordsAppList{})
+	SchemeBuilder.Register(&ReverseWordsApp{}, &ReverseWordsAppList{})
 }
 
 // Conditions
