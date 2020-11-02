@@ -45,6 +45,7 @@ const reverseWordsAppFinalizer = "finalizer.reversewordsapp.apps.linuxera.org"
 
 // +kubebuilder:rbac:groups=apps.linuxera.org,resources=reversewordsapps,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=apps.linuxera.org,resources=reversewordsapps/status,verbs=get;update;patch
+// +kubebuilder:rbac:groups=apps.linuxera.org,resources=reversewordsapps/finalizers,verbs=get;list;create;update;patch;delete
 // +kubebuilder:rbac:groups=apps,resources=deployments,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=core,resources=services,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=core,resources=pods,verbs=get;list;watch
