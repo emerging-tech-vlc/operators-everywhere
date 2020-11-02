@@ -19,7 +19,6 @@ mkdir -p ~/operators-projects/reverse-words-operator && cd $_
 export GO111MODULE=on
 export GOPROXY=https://proxy.golang.org
 export GH_USER=<your_github_user>
-go get github.com/operator-framework/operator-lib@v0.1.0
 operator-sdk init --domain=linuxera.org --repo=github.com/$GH_USER/reverse-words-operator
 ~~~
 
@@ -29,6 +28,7 @@ operator-sdk init --domain=linuxera.org --repo=github.com/$GH_USER/reverse-words
 operator-sdk create api --group=apps --version=v1alpha1 --kind=ReverseWordsApp --resource=true --controller=true
 curl -Ls https://raw.githubusercontent.com/emerging-tech-vlc/operators-everywhere/master/go-operator/files/reversewordsapp_types.go -o ~/operators-projects/reverse-words-operator/api/v1alpha1/reversewordsapp_types.go
 # Generate  boilerplate
+go get github.com/operator-framework/operator-lib@v0.1.0
 make generate
 ~~~
 
@@ -107,7 +107,7 @@ podman build -f bundle.Dockerfile -t quay.io/$QUAY_USER/reversewords-operator-bu
 podman push quay.io/$QUAY_USER/reversewords-operator-bundle:v0.0.1
 operator-sdk bundle validate quay.io/$QUAY_USER/reversewords-operator-bundle:v0.0.1 -b podman
 # Create the Index image
-sudo curl -sL https://github.com/operator-framework/operator-registry/releases/download/v1.15.0/linux-amd64-opm -o /usr/local/bin/opm && chmod +x /usr/local/bin/opm
+sudo curl -sL https://github.com/operator-framework/operator-registry/releases/download/v1.15.0/linux-amd64-opm -o /usr/local/bin/opm && sudo chmod +x /usr/local/bin/opm
 opm index add -c podman --bundles quay.io/$QUAY_USER/reversewords-operator-bundle:v0.0.1 --tag quay.io/$QUAY_USER/reversewords-index:v0.0.1
 podman push quay.io/$QUAY_USER/reversewords-index:v0.0.1
 ~~~
@@ -126,7 +126,7 @@ spec:
   sourceType: grpc
   displayName: Emerging Tech Operators
   publisher: Emerging Tech Valencia
-  image: quay.io/$QUAY_USERNAME/reversewords-index:v0.0.1
+  image: quay.io/$QUAY_USER/reversewords-index:v0.0.1
 EOF
 ~~~
 
