@@ -3,7 +3,7 @@
 ## Installing the Operator SDK
 
 ~~~sh
-RELEASE_VERSION=v0.18.1
+RELEASE_VERSION=v1.1.0
 # Linux
 sudo curl -L https://github.com/operator-framework/operator-sdk/releases/download/${RELEASE_VERSION}/operator-sdk-${RELEASE_VERSION}-x86_64-linux-gnu -o /usr/local/bin/operator-sdk
 # macOS
@@ -15,83 +15,105 @@ sudo chmod +x /usr/local/bin/operator-sdk
 ## Initialize the Operator Project
 
 ~~~sh
-mkdir -p ~/operators-projects/ && cd $_
+mkdir -p ~/operators-projects/reverse-words-operator && cd $_
 export GO111MODULE=on
 export GOPROXY=https://proxy.golang.org
 export GH_USER=<your_github_user>
-operator-sdk new reverse-words-operator --repo github.com/${GH_USER}/reverse-words-operator
-cd reverse-words-operator
+operator-sdk init --domain=linuxera.org --repo=github.com/$GH_USER/reverse-words-operator
 ~~~
 
 ## Create the Operator API Types
 
 ~~~sh
-operator-sdk add api --api-version=emergingtech.vlc/v1alpha1 --kind=ReverseWordsApp
-curl -Ls https://raw.githubusercontent.com/emerging-tech-vlc/operators-everywhere/master/go-operator/files/reversewordsapp_types.go -o pkg/apis/emergingtech/v1alpha1/reversewordsapp_types.go
-operator-sdk generate k8s
-~~~
-
-## Generate the Validation section in the CRD
-
-~~~sh
-operator-sdk generate crds
+operator-sdk create api --group=apps --version=v1alpha1 --kind=ReverseWordsApp --resource=true --controller=true
+curl -Ls https://raw.githubusercontent.com/emerging-tech-vlc/operators-everywhere/master/go-operator/files/reversewordsapp_types.go -o ~/operators-projects/reverse-words-operator/api/v1alpha1/reversewordsapp_types.go
+# Generate  boilerplate
+make generate
 ~~~
 
 ## Add a Controller to the Operator
 
 ~~~sh
 operator-sdk add controller --api-version=emergingtech.vlc/v1alpha1 --kind=ReverseWordsApp
-curl -Ls https://raw.githubusercontent.com/emerging-tech-vlc/operators-everywhere/master/go-operator/files/reversewordsapp_controller.go -o pkg/controller/reversewordsapp/reversewordsapp_controller.go
-sed -i "s/GHUSER/${GH_USER}/" pkg/controller/reversewordsapp/reversewordsapp_controller.go
+curl -Ls https://raw.githubusercontent.com/emerging-tech-vlc/operators-everywhere/master/go-operator/files/reversewordsapp_controller.go -o ~/operators-projects/reverse-words-operator/controllers/reversewordsapp_controller.go
+sed -i "s/GHUSER/${GH_USER}/" ~/operators-projects/reverse-words-operator/controllers/reversewordsapp_controller.go
+~~~
+
+## Setup Watch Namespaces
+
+~~~sh
+curl -Ls https://raw.githubusercontent.com/emerging-tech-vlc/operators-everywhere/master/go-operator/files/main.go -o ~/operators-projects/reverse-words-operator/main.go
+sed -i "s/GHUSER/${GH_USER}/" ~/operators-projects/reverse-words-operator/main.go
+~~~
+
+## Create the required manifest for deploying the operator
+
+~~~sh
+make manifests
+~~~
+
+## Run the tests
+
+~~~sh
+# Setup EnvTest
+curl https://raw.githubusercontent.com/kubernetes-sigs/controller-runtime/v0.6.2/hack/setup-envtest.sh -o /tmp/setup-envtest.sh
+source /tmp/setup-envtest.sh
+fetch_envtest_tools ~/operators-projects/reverse-words-operator/testbin
+set +o errexit
+set +o pipefail
+
+# Run the tests
+export KUBEBUILDER_ASSETS=~/operators-projects/reverse-words-operator/testbin/bin
+make test
 ~~~
 
 ## Build the Operator
 
 ~~~sh
 export QUAY_USER=<your_quay_user>
-operator-sdk build quay.io/${QUAY_USER}/reverse-words-operator:v0.1.0 --image-builder podman
-podman push quay.io/${QUAY_USER}/reverse-words-operator:v0.1.0
+export KUBEBUILDER_ASSETS=~/operators-projects/reverse-words-operator/testbin/bin
+make docker-build docker-push IMG=quay.io/$QUAY_USER/reversewords-operator:v0.0.1
 ~~~
 
-## Generate the Cluster Service Version 
+## Generate the Operator Bundle
+
+An Operator Bundle consists of different manifests (CSVs and CRDs) and some metadata that defines the Operator at a specific version.
 
 ~~~sh
-operator-sdk olm-catalog gen-csv --csv-version 0.1.0 --update-crds
-curl -Ls https://raw.githubusercontent.com/emerging-tech-vlc/operators-everywhere/master/go-operator/files/reverse-words-operator.v0.1.0.clusterserviceversion.yaml -o deploy/olm-catalog/reverse-words-operator/0.1.0/reverse-words-operator.v0.1.0.clusterserviceversion.yaml
-sed -i "s/QUAYUSER/${QUAY_USER}/" deploy/olm-catalog/reverse-words-operator/0.1.0/reverse-words-operator.v0.1.0.clusterserviceversion.yaml
+make bundle VERSION=0.0.1 CHANNELS=alpha DEFAULT_CHANNEL=alpha IMG=quay.io/$QUAY_USERNAME/reversewords-operator:v0.0.1
+curl -Ls https://raw.githubusercontent.com/emerging-tech-vlc/operators-everywhere/master/go-operator/files/reverse-words-operator.clusterserviceversion_v0.0.1.yaml -o ~/operators-projects/reverse-words-operator/bundle/manifests/reverse-words-operator.clusterserviceversion.yaml
+sed -i "s/QUAY_USER/$QUAY_USERNAME/g" ~/operators-projects/reverse-words-operator/bundle/manifests/reverse-words-operator.clusterserviceversion.yaml
 ~~~
 
 ## Review the CSV
 
-Go to https://operatorhub.io/preview and paste the CSV content from file `reverse-words-operator.v0.1.0.clusterserviceversion.yaml`
+Go to https://operatorhub.io/preview and paste the CSV content from file `reverse-words-operator.clusterserviceversion.yaml`
 
 ## Deploy the CSV
 
-### Create our own Catalog of Operators
+### Publish our own Bundle
 
-We are going to build our own `Catalog of Operators` so once published on the cluster we don't need to load CSVs manually.
+1. Build the bundle
+2. Push and validate the bundle
+3. Create the Index Image
 
-1. Clone the [operator-registry](https://github.com/operator-framework/operator-registry) repository
-2. Get the package file from the operator
-3. Copy CSV + Package + Versioned CRDs (Operator Bundle) to the `manifests` folder
-4. Build the Registry
+Index Image is an image which contains a database of pointers to operator manifest content that is easily queriable via an included API that is served when the container image is run.
 
 ~~~sh
-# Clone the operator-registry
-cd ~/operators-projects/
-git clone https://github.com/operator-framework/operator-registry
-cd operator-registry
-# Clean pre-existing operator bundles
-rm -rf manifests/*
-# Copy the operator bundle
-cp -r ~/operators-projects/reverse-words-operator/deploy/olm-catalog/reverse-words-operator manifests/
-# Build the Registry
-podman build -f upstream-example.Dockerfile -t quay.io/${QUAY_USER}/emergingtech-catalog:v1
-# Push the registry
-podman push quay.io/${QUAY_USER}/emergingtech-catalog:v1
+# Build the bundle
+podman build -f bundle.Dockerfile -t quay.io/$QUAY_USERNAME/reversewords-operator-bundle:v0.0.1
+# Push and validate the bundle
+podman push quay.io/$QUAY_USERNAME/reversewords-operator-bundle:v0.0.1
+operator-sdk bundle validate quay.io/$QUAY_USERNAME/reversewords-operator-bundle:v0.0.1 -b podman
+# Create the Index image
+sudo curl -sL https://github.com/operator-framework/operator-registry/releases/download/v1.15.0/linux-amd64-opm -o /usr/local/bin/opm && chmod +x /usr/local/bin/opm
+opm index add -c podman --bundles quay.io/$QUAY_USERNAME/reversewords-operator-bundle:v0.0.1 --tag quay.io/$QUAY_USERNAME/reversewords-index:v0.0.1
+podman push quay.io/$QUAY_USERNAME/reversewords-index:v0.0.1
 ~~~
 
 ### Load the CatalogSource onto the cluster
+
+At this point we have our bundle and index image ready, we just need to create the required CatalogSource into the cluster so we get access to our Operator bundle.
 
 ~~~sh
 cat <<EOF | oc -n openshift-marketplace create -f -
@@ -103,7 +125,7 @@ spec:
   sourceType: grpc
   displayName: Emerging Tech Operators
   publisher: Emerging Tech Valencia
-  image: quay.io/${QUAY_USER}/emergingtech-catalog:v1
+  image: quay.io/$QUAY_USERNAME/reversewords-index:v0.0.1
 EOF
 ~~~
 
@@ -160,37 +182,37 @@ Go to the OperatorHub catalog and search the operator within the WebUI.
 2. Update the Catalog of Operators
    
    ~~~sh
-   cd ~/operators-projects/operator-registry
-   # Copy the operator bundle
-   cp -r ~/operators-projects/reverse-words-operator/deploy/olm-catalog/reverse-words-operator manifests/
+   make bundle VERSION=0.0.2 CHANNELS=alpha DEFAULT_CHANNEL=alpha IMG=quay.io/$QUAY_USERNAME/reversewords-operator:v0.0.2
    ~~~
-3. Update the Package file
+3. Tweak the CSV with proper installModes etc.
+   
+   ~~~sh
+   curl -Ls https://raw.githubusercontent.com/emerging-tech-vlc/operators-everywhere/master/go-operator/reverse-words-operator.clusterserviceversion_v0.0.2.yaml -o ~/operators-projects/reverse-words-operator/bundle/manifests/reverse-words-operator.clusterserviceversion.yaml
+   sed -i "s/QUAY_USER/$QUAY_USERNAME/g" ~/operators-projects/reverse-words-operator/bundle/manifests/reverse-words-operator.clusterserviceversion.yaml
+   ~~~
+4. Build the new bundle
 
    ~~~sh
-   cat <<EOF > manifests/reverse-words-operator/reverse-words-operator.package.yaml
-   channels:
-   - name: alpha
-     currentCSV: reverse-words-operator.v0.1.0
-   - name: beta
-     currentCSV: reverse-words-operator.v0.2.0
-   - name: stable
-     currentCSV: reverse-words-operator.v0.1.0
-   defaultChannel: alpha
-   packageName: reverse-words-operator
-   EOF
+   podman build -f bundle.Dockerfile -t quay.io/$QUAY_USERNAME/reversewords-operator-bundle:v0.0.2
    ~~~
-4. Build and push a new version of the Catalog
+5. Push and validate the new bundle
 
    ~~~sh
-   # Build the Registry
-   podman build -f upstream-example.Dockerfile -t quay.io/${QUAY_USER}/emergingtech-catalog:v2
-   # Push the registry
-   podman push quay.io/${QUAY_USER}/emergingtech-catalog:v2
+   podman push quay.io/$QUAY_USERNAME/reversewords-operator-bundle:v0.0.2
+   operator-sdk bundle validate quay.io/$QUAY_USERNAME/reversewords-operator-bundle:v0.0.2 -b podman
    ~~~
-5. Update the CatalogSource
+6. Update the Index image
 
    ~~~sh
-   PATCH={"spec":{"image":"quay.io/${QUAY_USER}/emergingtech-catalog:v2"}}
-   oc -n openshift-marketplace patch catalogsource emergingtech-catalog -p '$PATCH' --type merge
+   # Create the index image
+   opm index add -c podman --bundles quay.io/$QUAY_USERNAME/reversewords-operator-bundle:v0.0.2 --from-index quay.io/$QUAY_USERNAME/reversewords-index:v0.0.1 --tag quay.io/$QUAY_USERNAME/reversewords-index:v0.0.2
+   # Push the index image
+   podman push quay.io/$QUAY_USERNAME/reversewords-index:v0.0.2
    ~~~
-6. Now you can update your operators modifying the subscription
+7. Patch the catalogsource
+
+   ~~~sh
+   PATCH="{\"spec\":{\"image\":\"quay.io/$QUAY_USERNAME/reversewords-index:v0.0.2\"}}"
+   oc -n openshift-marketplace patch catalogsource emergingtech-catalog -p $PATCH --type merge
+   ~~~
+8. Now you can update your operators modifying the subscription or if the auto update is enabled, they will be updated automatically
