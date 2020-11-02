@@ -19,6 +19,7 @@ mkdir -p ~/operators-projects/reverse-words-operator && cd $_
 export GO111MODULE=on
 export GOPROXY=https://proxy.golang.org
 export GH_USER=<your_github_user>
+go get github.com/operator-framework/operator-lib@v0.1.0
 operator-sdk init --domain=linuxera.org --repo=github.com/$GH_USER/reverse-words-operator
 ~~~
 
@@ -34,7 +35,6 @@ make generate
 ## Add a Controller to the Operator
 
 ~~~sh
-operator-sdk add controller --api-version=emergingtech.vlc/v1alpha1 --kind=ReverseWordsApp
 curl -Ls https://raw.githubusercontent.com/emerging-tech-vlc/operators-everywhere/master/go-operator/files/reversewordsapp_controller.go -o ~/operators-projects/reverse-words-operator/controllers/reversewordsapp_controller.go
 sed -i "s/GHUSER/${GH_USER}/" ~/operators-projects/reverse-words-operator/controllers/reversewordsapp_controller.go
 ~~~
@@ -72,6 +72,7 @@ make test
 ~~~sh
 export QUAY_USER=<your_quay_user>
 export KUBEBUILDER_ASSETS=~/operators-projects/reverse-words-operator/testbin/bin
+# If using podman edit Makefile to use podman instead of docker
 make docker-build docker-push IMG=quay.io/$QUAY_USER/reversewords-operator:v0.0.1
 ~~~
 
@@ -80,9 +81,9 @@ make docker-build docker-push IMG=quay.io/$QUAY_USER/reversewords-operator:v0.0.
 An Operator Bundle consists of different manifests (CSVs and CRDs) and some metadata that defines the Operator at a specific version.
 
 ~~~sh
-make bundle VERSION=0.0.1 CHANNELS=alpha DEFAULT_CHANNEL=alpha IMG=quay.io/$QUAY_USERNAME/reversewords-operator:v0.0.1
+make bundle VERSION=0.0.1 CHANNELS=alpha DEFAULT_CHANNEL=alpha IMG=quay.io/$QUAY_USER/reversewords-operator:v0.0.1
 curl -Ls https://raw.githubusercontent.com/emerging-tech-vlc/operators-everywhere/master/go-operator/files/reverse-words-operator.clusterserviceversion_v0.0.1.yaml -o ~/operators-projects/reverse-words-operator/bundle/manifests/reverse-words-operator.clusterserviceversion.yaml
-sed -i "s/QUAY_USER/$QUAY_USERNAME/g" ~/operators-projects/reverse-words-operator/bundle/manifests/reverse-words-operator.clusterserviceversion.yaml
+sed -i "s/QUAY_USER/$QUAY_USER/g" ~/operators-projects/reverse-words-operator/bundle/manifests/reverse-words-operator.clusterserviceversion.yaml
 ~~~
 
 ## Review the CSV
@@ -101,14 +102,14 @@ Index Image is an image which contains a database of pointers to operator manife
 
 ~~~sh
 # Build the bundle
-podman build -f bundle.Dockerfile -t quay.io/$QUAY_USERNAME/reversewords-operator-bundle:v0.0.1
+podman build -f bundle.Dockerfile -t quay.io/$QUAY_USER/reversewords-operator-bundle:v0.0.1
 # Push and validate the bundle
-podman push quay.io/$QUAY_USERNAME/reversewords-operator-bundle:v0.0.1
-operator-sdk bundle validate quay.io/$QUAY_USERNAME/reversewords-operator-bundle:v0.0.1 -b podman
+podman push quay.io/$QUAY_USER/reversewords-operator-bundle:v0.0.1
+operator-sdk bundle validate quay.io/$QUAY_USER/reversewords-operator-bundle:v0.0.1 -b podman
 # Create the Index image
 sudo curl -sL https://github.com/operator-framework/operator-registry/releases/download/v1.15.0/linux-amd64-opm -o /usr/local/bin/opm && chmod +x /usr/local/bin/opm
-opm index add -c podman --bundles quay.io/$QUAY_USERNAME/reversewords-operator-bundle:v0.0.1 --tag quay.io/$QUAY_USERNAME/reversewords-index:v0.0.1
-podman push quay.io/$QUAY_USERNAME/reversewords-index:v0.0.1
+opm index add -c podman --bundles quay.io/$QUAY_USER/reversewords-operator-bundle:v0.0.1 --tag quay.io/$QUAY_USER/reversewords-index:v0.0.1
+podman push quay.io/$QUAY_USER/reversewords-index:v0.0.1
 ~~~
 
 ### Load the CatalogSource onto the cluster
