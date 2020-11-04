@@ -65,6 +65,17 @@ spec:
         - apiGroups:
           - apps.linuxera.org
           resources:
+          - reversewordsapps/finalizers
+          verbs:
+          - create
+          - delete
+          - get
+          - list
+          - patch
+          - update
+        - apiGroups:
+          - apps.linuxera.org
+          resources:
           - reversewordsapps/status
           verbs:
           - get
